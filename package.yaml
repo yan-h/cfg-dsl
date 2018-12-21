@@ -21,9 +21,18 @@ description:         Please see the README on GitHub at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
+- diagrams
+- diagrams-lib
+- diagrams-contrib
+- diagrams-svg
+- diagrams-core
+- mtl >= 2.2.2
+- containers >= 0.5
 
 library:
   source-dirs: src
+  build-depends: 
+    containers
 
 executables:
   cfg-dsl-exe:
