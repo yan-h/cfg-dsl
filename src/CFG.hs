@@ -1,134 +1,123 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, InstanceSigs, LambdaCase, MonadComprehensions #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, InstanceSigs, MonadComprehensions, NoMonomorphismRestriction #-}
 
 module CFG where
 
-import Control.Monad.State.Lazy
-import Control.Applicative ((<|>))
-import Parser
-import qualified Data.Map.Lazy as Map
-import Data.Maybe (fromJust)
-import Debug.Trace
-import Data.Map.Lazy (Map)
+import           Control.Monad.Reader
+import           Control.Applicative            ( (<|>) )
+import           Parser
+import           Data.Maybe                     ( fromJust )
+import           Debug.Trace
+import           Data.List                      ( intercalate )
+import           Data.Map.Lazy                  ( Map )
+import qualified Data.Map.Lazy                 as Map
 
--- Newtype wrapper for type safety.
-newtype CFG a = CFG { runCFG :: a }
-
--- A CFG in BCNF form.
+-- A CFG in EBNF form.
 class CFGSYM repr where
-  -- Ts and nonterminals. The building blocks of expressions.
+  -- Terminals and nonterminals. The building blocks of expressions.
   t :: String -> repr
   n :: String -> repr
 
   -- Functions for building up an expression. 
-  plus :: repr -> repr -- Zero or one of an expression
-  star :: repr -> repr -- Zero or more of an expression
-  (#) :: repr -> repr -> repr -- One expression after another 
-  (|||) :: repr -> repr -> repr -- One expression or another
+  cat :: [repr] -> repr -- Concatnation: Chaining a list of expressions. 
+  alt :: [repr] -> repr -- Alternation: Choosing one of a list of expressions.
+  opt :: repr -> repr -- Optional: zero or one of an expression.
+  rep :: repr -> repr -- Repetition: zero or more of an expression.
 
   -- A complete CFG. A list of (nonterminal, expression) pairs.
   -- Wrapped in a newtype to disallow further composition.
-  rules :: [(String, repr)] -> CFG repr
-
-infixl 4 #
-infixl 3 |||
+  rules :: [(String, repr)] -> repr
 
 -- Pretty printer interpretation
 instance CFGSYM String where
   t str = "\"" ++ str ++ "\""
   n str = str
-  plus str = "[" ++ str ++ "]"
-  star str = "{" ++ str ++ "}"
-  str1 # str2 = str1 ++ " , " ++ str2
-  str1 ||| str2 = str1 ++ " | " ++ str2
+  opt str = "[" ++ str ++ "]"
+  rep str = "{" ++ str ++ "}"
+  cat = intercalate " , "
+  alt = intercalate " | "
 
-  rules = CFG . showRule where
+  rules = showRule where
     showRule [] = ""
-    showRule ((n, s):rs) = n ++ " -> " ++ s ++ "\n" ++ showRule rs 
+    showRule ((n, s):rs) = n ++ " -> " ++ s ++ "\n" ++ showRule rs
 
-data ParseTree = 
-  List [ParseTree]
-  | N String [ParseTree]
-  | T String
-  deriving (Show)
-
-toList :: ParseTree -> [ParseTree]
-toList (T s) = [T s]
-toList (List ts) = ts
-toList (N _ ts) = ts
-
-concatPT :: ParseTree ->  ParseTree -> ParseTree
-concatPT a b = List (toList a ++ toList b)
-
-instance CFGSYM (State (Map String (Parser ParseTree)) (Parser ParseTree)) where
+-- Parser interpretation
+instance CFGSYM (Reader (Map String (Parser ParseTree)) (Parser ParseTree)) where
   t str = return [T s | s <- string str]
-    
-  n str = do 
-    parsers <- get 
+
+  n str = do
+    parsers <- ask
     let p = fromJust $ Map.lookup str parsers
     return $ N str . toList <$> p
 
-  plus parser = do
+  opt parser = do
     p <- parser
-    return [List xs | xs <- zeroOrOne p] 
+    return [List xs | xs <- zeroOrOne p]
 
-  star parser = do
+  rep parser = do
     p <- parser
     return [List xs | xs <- many p]
 
-  parser1 # parser2 = do
-    p1 <- parser1
-    p2 <- parser2
-    return [concatPT a b | a <- p1, b <- p2]
-      
-  parser1 ||| parser2 = do 
-    p1 <- parser1 
-    p2 <- parser2
-    return $ p1 <|> p2
+  cat parsers = do
+    ps <- sequence parsers
+    return [catParseTrees pts | pts <- catParsers ps]
 
-  -- TODO empty rule
-  rules lst 
-    | null lst = CFG $ return zero 
-    | otherwise = CFG $ do
-        let 
-          allParsers :: Map String (Parser ParseTree)
-          allParsers = foldr (\(name, parser) acc -> Map.insert name (evalState parser allParsers) acc) Map.empty lst
-        put allParsers
-        return $ fromJust $ Map.lookup (fst . head $ lst) allParsers
+  alt parsers = do
+    ps <- sequence parsers
+    return $ foldr (<|>) zero ps
+
+  rules lst
+    | null lst = return zero
+    | otherwise =
+        let startName = fst . head $ lst
+            allParsers :: Map String (Parser ParseTree)
+            allParsers = foldr (\(name, parser) acc -> Map.insert name (runReader parser allParsers) acc) Map.empty lst
+            startParser = fromJust $ Map.lookup startName allParsers
+        in return [N startName (toList xs) | xs <- complete startParser]
+
+-- The structure that our parsers produce.
+data ParseTree =
+  List [ParseTree] -- Temporary structure for accumulating results
+  | N String [ParseTree] -- Nonterminal
+  | T String -- Terminal
+
+instance Show ParseTree where
+  show (List xs) = show xs
+  show (T str) = str
+  show (N name xs) = name ++ show xs
+
+toList :: ParseTree -> [ParseTree]
+toList (List ts) = ts
+toList (T    s ) = [T s]
+toList (N s ts ) = [N s ts]
+
+catParseTrees :: [ParseTree] -> ParseTree
+catParseTrees pts = List $ concatMap toList pts
+
+getParser
+  :: Reader (Map String (Parser ParseTree)) (Parser ParseTree)
+  -> Parser ParseTree
+getParser x = runReader x Map.empty
 
 -- A test CFG. Represents arithmetic expressions on natural numbers.
-arith = rules 
-  [ 
-    ("expr", 
-      n "number" ||| t "(" # n "expr" # n "op" # n "expr" # t ")"),
-    ("op", 
-      t "+" ||| t "-" ||| t "*" ||| t "/"),
-    ("number",
-      t "0" ||| t "1" ||| t "2" ||| t "3" ||| t "4" ||| t "5" ||| t "6" ||| t "7" ||| t "8" ||| t "9")
+arith = rules
+  [ ("expr", alt [n "number", cat [t "(", n "expr", n "op", n "expr", t ")"]])
+  , ("op"    , alt [t "+", t "-", t "*", t "/"])
+  , ("number", alt [t "0", cat [opt (t "-"), n "nonzero", alt [rep (alt [t "0", n "nonzero", rep (alt [t "a", t "b", t "c"])]), cat [t "a", t "b", t "c", t "d", t "e", t "f"]]]])
+  , ("nonzero"
+    , alt [t "1", t "2", t "3", t "4", t "5", t "6", t "7", t "8", t "9"]
+    )
   ]
 
-ll1 = rules 
-  [
-    ("s", n "f"),
-    ("s", t "(" # n "s" # t "+" # n "f" # t ")"),
-    ("f", t "a")
-  ]
+simple = rules [("s", alt [t "x", cat [t "x", n "s"]])]
 
-simple = rules 
-  [
-    ("s", t "x" ||| t "x" # n "s")
-  ]
+arithStr :: String
+arithStr = arith
 
-arithParser :: (State (Map String (Parser ParseTree)) (Parser ParseTree))
-arithParser = runCFG arith
+simpleStr :: String
+simpleStr = simple
 
-arithP = evalState arithParser Map.empty
+arithP :: Parser ParseTree
+arithP = getParser arith
 
-ll1Parser :: (State (Map String (Parser ParseTree)) (Parser ParseTree))
-ll1Parser = runCFG ll1
-
-ll1P = evalState ll1Parser Map.empty
-
-simpleParser :: (State (Map String (Parser ParseTree)) (Parser ParseTree))
-simpleParser = runCFG simple
-
-simpleP = evalState simpleParser Map.empty
+simpleP :: Parser ParseTree
+simpleP = getParser simple

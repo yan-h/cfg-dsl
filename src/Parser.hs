@@ -3,6 +3,7 @@
 module Parser where
 
 import           Data.Char
+import           Data.Traversable
 import           Control.Applicative            ( Alternative
                                                 , empty
                                                 , (<|>)
@@ -51,28 +52,49 @@ item = Parser $ \case
   []       -> []
   (x : xs) -> [(x, xs)]
 
--- Succeeds if the first character matches a given one, otherwise fails
+-- Parses a single character and succeeds only if it fulfills a predicate
 sat :: (Char -> Bool) -> Parser Char
 sat p = do
   x <- item
   if p x then result x else zero
 
+-- Parses a single character
 char :: Char -> Parser Char
 char x = sat (== x)
 
+-- Parses a string
 string :: String -> Parser String
 string []       = return ""
 string (x : xs) = [ a : as | a <- char x, as <- string xs ]
 
-chain :: Parser a -> Parser b -> Parser (a, b)
-chain p1 p2 = [ (a, b) | a <- p1, b <- p2 ]
-
+-- Applies a parser zero or one times
 zeroOrOne :: Parser a -> Parser [a]
 zeroOrOne p = (return <$> p) <|> return []
 
+-- Applies a parser zero or more times
 many :: Parser a -> Parser [a]
 many p = [ x : xs | x <- p, xs <- many p ] <|> return []
 
+-- Applies a parser one or more times
 many1 :: Parser a -> Parser [a]
 many1 p = [ x : xs | x <- p, xs <- many p ]
 
+-- Applies a parser and fails unless all of the input is consumed
+complete :: Parser a -> Parser a
+complete p = Parser $ \cs -> filter (\(_, res) -> res == "") (parse p cs)
+
+-- Applies a parser and returns only its first result
+one :: Parser a -> Parser a
+one p = Parser $ \cs -> case parse p cs of
+  []       -> []
+  (x : xs) -> [x]
+
+firstComplete :: Parser a -> Parser a
+firstComplete = one . complete
+
+catParsers :: [Parser a] -> Parser [a]
+catParsers []       = result []
+catParsers (p : ps) = do
+  x <- p
+  y <- catParsers ps
+  return (x:y)

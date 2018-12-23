@@ -1,4 +1,7 @@
 module Main where
 
-main :: IO ()
-main = putStrLn "Hello" 
+import RailroadDiagram
+import Diagrams.Prelude
+import Diagrams.Backend.SVG.CmdLine
+
+main = putStrLn "hello"
