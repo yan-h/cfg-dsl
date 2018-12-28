@@ -17,6 +17,7 @@ vgap = 0.6
 -- Gap between nodes horizontally connected with arrows
 hpad = 1.4
 
+-- Common arrow style 
 arrowStyle = with & arrowHead .~ dart & lengths .~ verySmall
 
 mkArrow = arrowBetween' arrowStyle
@@ -85,17 +86,16 @@ instance (a ~ Diagram B) => CFGSYM a where
           <> mkArrow (0 ^& (-(height top + vgap - nodeHeight * 0.5))) (0 ^& 0)
           <> mkArrow (hlen ^& 0) (hlen ^& (-(height top + vgap - nodeHeight * 0.5)))
 
-  rules xs = 
+  rules xs = CFG $
     let drawProd :: (String, Diagram B) -> Diagram B
         drawProd (name, d) =
           let txt = text (name ++ ":") 
                 # fontSize (local 1.2) 
-                # translateX ((fromIntegral (length name)) * 0.4) 
+                # translateX (fromIntegral (length name) * 0.4) 
                 # font "courier"
                 # bold
           in  vsep (vgap * 1.5) [txt, hArrows (width d + hpad * 2) d]
     in  vsep (vgap * 4) . map drawProd $ xs
 
 arithDiagram :: Diagram B
-arithDiagram = arith
-
+arithDiagram = unCFG arith
