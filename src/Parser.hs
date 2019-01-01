@@ -10,6 +10,7 @@ import           Control.Applicative            ( Alternative
                                                 , (<|>)
                                                 )
 import           Control.Monad
+import Data.List(foldl')
 import           CFG
 import           Data.Map.Lazy                  ( Map )
 import qualified Data.Map.Lazy                 as Map
@@ -112,7 +113,7 @@ instance CFGSYM (Reader (Map String (Parser ParseTree)) (Parser ParseTree)) wher
     parsers <- ask
     let p = case Map.lookup str parsers of
           (Just parser) -> parser
-          Nothing -> error $ "Attempted to reference undeclared nonterminal " ++ str
+          Nothing -> error $ "Attempted to reference undeclared nonterminal: " ++ str
     return $ N str . toList <$> p
 
   opt parser = do
@@ -129,7 +130,7 @@ instance CFGSYM (Reader (Map String (Parser ParseTree)) (Parser ParseTree)) wher
 
   alt parsers = do
     ps <- sequence parsers
-    return $ foldr (<|>) zero ps
+    return $ foldl' (<|>) zero ps
 
   rules lst
     | null lst
@@ -157,7 +158,7 @@ data ParseTree =
 
 instance Show ParseTree where
   show (List xs  ) = show xs
-  show (T    str ) = str
+  show (T    str ) = "\"" ++ str ++ "\""
   show (N name xs) = name ++ show xs
 
 toList :: ParseTree -> [ParseTree]
@@ -175,6 +176,3 @@ getParser x = runReader (unCFG x) Map.empty
 
 arithP :: Parser ParseTree
 arithP = getParser arith
-
-simpleP :: Parser ParseTree
-simpleP = getParser simple
