@@ -1,9 +1,10 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, InstanceSigs, MonadComprehensions, NoMonomorphismRestriction #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+
 module PrettyPrinter where
 
 import           Data.List                      ( intercalate )
-import CFG
-  
+import           CFG
+
 -- Pretty printer interpretation
 instance CFGSYM String where
   t str = "\"" ++ str ++ "\""
@@ -13,9 +14,9 @@ instance CFGSYM String where
   cat   = intercalate " , "
   alt   = intercalate " | "
 
-  rules = CFG . showRule where
-    showRule []            = ""
-    showRule ((n, s) : rs) = n ++ " = " ++ s ++ ";\n" ++ showRule rs
+  rules = CFG . showRules   where
+    showRules []            = ""
+    showRules ((n, s) : rs) = n ++ " = " ++ s ++ ";\n" ++ showRules rs
 
 arithStr :: String
 arithStr = unCFG arith

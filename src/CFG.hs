@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, InstanceSigs, MonadComprehensions, NoMonomorphismRestriction #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 
 module CFG where
 
@@ -20,7 +20,7 @@ class CFGSYM repr where
   -- Wrapped in a newtype to disallow further composition.
   rules :: [(String, repr)] -> CFG repr
 
--- A sample CFG. Represents fully parethesized arithmetic expressions on integers.
+-- A sample CFG. Represents fully parenthesized arithmetic expressions on integers.
 arith = rules
   [ ("expr", alt [n "integer", cat [t "(", n "expr", n "op", n "expr", t ")"]])
   , ("op"  , alt [t "+", t "-", t "*", t "/"])
